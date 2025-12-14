@@ -26,7 +26,7 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    - name: Install Android SDK Build Tools
+    - name: Install Build Tools
       run: |
         yes | sdkmanager --install "build-tools;35.0.0"
         echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
@@ -45,10 +45,18 @@ jobs:
         tag: v2.9.3
         fileName: apktool_2.9.3.jar
 
-    - name: Setup repack tools
+    - name: Download patch
+      uses: robinraju/release-downloader@v1.10
+      with:
+        repository: JMBQ/azurlane
+        latest: true
+        fileName: "MOD*.zip"
+
+    - name: Setup tools
       run: |
-        mv apktool_2.9.3.jar apktool.jar
+        mv apktool_2.9.3.jar $DOWNLOAD_DIR/apktool.jar
         mv apkeep-x86_64-unknown-linux-gnu /usr/local/bin/apkeep
+        unzip -q MOD*.zip -d $DOWNLOAD_DIR/patches
         chmod +x /usr/local/bin/apkeep
 
     - name: Create directories
@@ -68,9 +76,38 @@ jobs:
       env:
         PACKAGE_NAME: ${{ matrix.package }}
       run: |
-        # TODO: add patch
-        cp $DOWNLOAD_DIR/${PACKAGE_NAME}.apk $BUILD_DIR/${PACKAGE_NAME}.patched.apk
+        cd $BUILD_DIR
+        cp $DOWNLOAD_DIR/${PACKAGE_NAME}.apk ${PACKAGE_NAME}.apk
+        java -jar $DOWNLOAD_DIR/apktool.jar d ${PACKAGE_NAME}.apk
         
+        cd ${PACKAGE_NAME}
+        echo "Copying patch files..."
+        cp -r $DOWNLOAD_DIR/patches/assets .
+        cp -r $DOWNLOAD_DIR/patches/smali* .
+
+        SMALI_FILE=$(find . -type f -name "UnityPlayerActivity.smali")
+        if [ -z "${SMALI_FILE}" ]; then
+            echo "Error: UnityPlayerActivity.smali not found!"
+            exit 1
+        fi
+
+        echo "Hooking UnityPlayerActivity.smali..."
+        sed -i -e "/\.method public constructor <init>()V/,/\.end method/{" \
+              -e "/\.locals 0/a\    invoke-static {}, Lcom/android/support/Main;->Start()V" \
+              -e "}" "${SMALI_FILE}" || {
+            echo "Error: Failed to hook into UnityPlayerActivity.smali"
+            exit 1
+        }
+
+        echo "Updating overlays in AndroidManifest.xml..."
+        sed -i 's#</application>#    <service android:name="com.android.support.Launcher" android:enabled="true" android:exported="false" android:stopWithTask="true"/>\n    </application>\n    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>#' AndroidManifest.xml || {
+            echo "Error: Failed to update overlays"
+            exit 1
+        }
+        
+        cd ..
+        echo "Rebuilding APK..."
+        java -jar $DOWNLOAD_DIR/apktool.jar -q -f b $PACKAGE_NAME -o $PACKAGE_NAME.patched.apk
 
     - name: Sign APK
       env:
@@ -82,7 +119,7 @@ jobs:
         zipalign -pf 4 $BUILD_DIR/$PACKAGE_NAME.patched.apk $BUILD_DIR/$PACKAGE_NAME.aligned.apk
         apksigner sign --ks keystore.jks --ks-pass env:KEYSTORE_PASSWORD $BUILD_DIR/$PACKAGE_NAME.aligned.apk
 
-    - name: Prepare output
+    - name: Prepare Release APK
       env:
         PACKAGE_NAME: ${{ matrix.package }}
       run: |
