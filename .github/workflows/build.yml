@@ -119,16 +119,15 @@ jobs:
         zipalign -pf 4 $BUILD_DIR/$PACKAGE_NAME.patched.apk $BUILD_DIR/$PACKAGE_NAME.aligned.apk
         apksigner sign --ks keystore.jks --ks-pass env:KEYSTORE_PASSWORD $BUILD_DIR/$PACKAGE_NAME.aligned.apk
 
-    - name: Prepare Release APK
+    - name: Prepare Upload
       env:
         PACKAGE_NAME: ${{ matrix.package }}
       run: |
         mv $BUILD_DIR/$PACKAGE_NAME.aligned.apk $OUTPUT_DIR/$PACKAGE_NAME.apk
 
-    - name: Release
-      uses: softprops/action-gh-release@v2
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
       with:
-        files: |
-          $OUTPUT_DIR/*.apk
-        name: latest
-        make_latest: true
+        name: ${{ matrix.package }}
+        path: |
+          ${{ matrix.package }}.apk
