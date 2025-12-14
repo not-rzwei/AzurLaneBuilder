@@ -1,0 +1,92 @@
+name: Android Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [com.YoStarJP.AzurLane]
+    env:
+      DOWNLOAD_DIR: ${{ github.workspace }}/downloads
+      BUILD_DIR: ${{ github.workspace }}/build
+      OUTPUT_DIR: ${{ github.workspace }}/output
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install Android SDK Build Tools
+      run: |
+        yes | sdkmanager --install "build-tools;35.0.0"
+
+    - name: Download apkeep
+      uses: robinraju/release-downloader@v1.10
+      with:
+        repository: EFForg/apkeep
+        tag: 0.16.0
+        fileName: apkeep-x86_64-unknown-linux-gnu
+
+    - name: Download apktool
+      uses: robinraju/release-downloader@v1.10
+      with:
+        repository: iBotPeaches/Apktool
+        tag: v2.9.3
+        fileName: apktool_2.9.3.jar
+
+    - name: Setup repack tools
+      run: |
+        mv apktool_2.9.3.jar apktool.jar
+        mv apkeep-x86_64-unknown-linux-gnu /usr/local/bin/apkeep
+        chmod +x /usr/local/bin/apkeep
+
+    - name: Create directories
+      run: |
+        mkdir -p $DOWNLOAD_DIR
+        mkdir -p $BUILD_DIR
+        mkdir -p $OUTPUT_DIR
+
+    - name: Download APK
+      env:
+        PACKAGE_NAME: ${{ matrix.package }}
+      run: |
+        apkeep -a $PACKAGE_NAME $DOWNLOAD_DIR/
+        unzip -q $DOWNLOAD_DIR/${PACKAGE_NAME}.xapk -d $DOWNLOAD_DIR
+
+    - name: Patch APK
+      env:
+        PACKAGE_NAME: ${{ matrix.package }}
+      run: |
+        # TODO: add patch
+        cp $DOWNLOAD_DIR/${PACKAGE_NAME}.apk $BUILD_DIR/${PACKAGE_NAME}.patched.apk
+        
+
+    - name: Sign APK
+      env:
+        PACKAGE_NAME: ${{ matrix.package }}
+        KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      run: |
+        echo "$KEYSTORE_BASE64" | base64 -d > keystore.jks
+        zipalign -pf 4 $BUILD_DIR/$PACKAGE_NAME.patched.apk $BUILD_DIR/$PACKAGE_NAME.aligned.apk
+        apksigner sign --ks keystore.jks --ks-pass env:KEYSTORE_PASSWORD $BUILD_DIR/$PACKAGE_NAME.aligned.apk
+
+    - name: Prepare output
+      env:
+        PACKAGE_NAME: ${{ matrix.package }}
+      run: |
+        mv $BUILD_DIR/$PACKAGE_NAME.aligned.apk $OUTPUT_DIR/$PACKAGE_NAME.apk
+        ls -lh $OUTPUT_DIR/
+
+    # TODO: release step
+    
