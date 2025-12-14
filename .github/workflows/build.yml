@@ -85,17 +85,29 @@ jobs:
         cp -r $DOWNLOAD_DIR/patches/assets .
         cp -r $DOWNLOAD_DIR/patches/smali* .
 
-        SMALI_FILE=$(find . -type f -name "UnityPlayerActivity.smali")
-        if [ -z "${SMALI_FILE}" ]; then
+        echo "Hooking UnityPlayerActivity.smali..."
+        UNITY_SMALI_FILE=$(find . -type f -name "UnityPlayerActivity.smali")
+        if [ -z "${UNITY_SMALI_FILE}" ]; then
             echo "Error: UnityPlayerActivity.smali not found!"
             exit 1
         fi
 
-        echo "Hooking UnityPlayerActivity.smali..."
         sed -i -e "/\.method public constructor <init>()V/,/\.end method/{" \
               -e "/\.locals 0/a\    invoke-static {}, Lcom/android/support/Main;->Start()V" \
-              -e "}" "${SMALI_FILE}" || {
+              -e "}" "${UNITY_SMALI_FILE}" || {
             echo "Error: Failed to hook into UnityPlayerActivity.smali"
+            exit 1
+        }
+
+        echo "Hiding icon in Menu.smali..."
+        MENU_SMALI_FILE=$(find . -type f -name "Menu.smali")
+        if [ -z "${MENU_SMALI_FILE}" ]; then
+            echo "Error: Menu.smali not found!"
+            exit 1
+        fi
+
+        sed -i '\|invoke-virtual {v0, v2}, Landroid/widget/FrameLayout;->addView(Landroid/view/View;)V|d'  "$MENU_SMALI_FILE" || {
+            echo "Error: Failed to hide icon"
             exit 1
         }
 
