@@ -29,6 +29,7 @@ jobs:
     - name: Install Android SDK Build Tools
       run: |
         yes | sdkmanager --install "build-tools;35.0.0"
+        echo "$ANDROID_HOME/build-tools/35.0.0" >> "$GITHUB_PATH"
 
     - name: Download apkeep
       uses: robinraju/release-downloader@v1.10
